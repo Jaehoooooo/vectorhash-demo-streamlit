@@ -1,9 +1,10 @@
+import os
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import pickle
 #font = fm.FontProperties(family = 'sans-serif', fname='/System/Library/Fonts/Helvetica.ttc')
-plt.style.use('./src/presentation.mplstyle')
+plt.style.use(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'presentation.mplstyle'))
 
 
 def write_pkl(filename, dict):
