@@ -49,6 +49,12 @@ def _render_open_figures():
 plt.show = _render_open_figures
 
 
+def _stepper_bump(key, delta, min_value, max_value):
+    # on_click 콜백은 위젯 인스턴스화 전(rerun 직전)에 실행되므로 여기서 session_state를
+    # 고쳐야 StreamlitWidgetAlreadyInstantiatedError 없이 안전하게 값이 바뀐다.
+    st.session_state[key] = min(max(st.session_state[key] + delta, min_value), max_value)
+
+
 def stepper_slider(label, min_value, max_value, value, step, key):
     """st.slider + 양옆 -/+ 버튼. key로 session_state에 값 보관."""
     if key not in st.session_state:
@@ -56,14 +62,14 @@ def stepper_slider(label, min_value, max_value, value, step, key):
     st.session_state[key] = min(max(st.session_state[key], min_value), max_value)
 
     c1, c2, c3 = st.columns([14, 1, 1], gap="small")
+    with c2:
+        st.button("-", key=f"{key}_minus", use_container_width=True,
+                  on_click=_stepper_bump, args=(key, -step, min_value, max_value))
+    with c3:
+        st.button("+", key=f"{key}_plus", use_container_width=True,
+                  on_click=_stepper_bump, args=(key, step, min_value, max_value))
     with c1:
         st.slider(label, min_value, max_value, step=step, key=key)
-    with c2:
-        if st.button("-", key=f"{key}_minus", use_container_width=True):
-            st.session_state[key] = max(min_value, st.session_state[key] - step)
-    with c3:
-        if st.button("+", key=f"{key}_plus", use_container_width=True):
-            st.session_state[key] = min(max_value, st.session_state[key] + step)
     return st.session_state[key]
 
 
