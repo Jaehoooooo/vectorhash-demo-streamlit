@@ -84,14 +84,11 @@ def _get_item_mem(Nh, n_items_sub):
 
 def render_item_memory():
     st.header("1. Item Memory")
-    col1, col2 = st.columns(2)
-    with col1:
-        Nh = stepper_slider("N_h", 200, 800, cfg.DEFAULT_SCAFFOLD.Nh, 10, key="item_Nh")
-        n_items_sub = stepper_slider("N_s", 1, 1000, cfg.DEFAULT_SCAFFOLD.Nh // 2 + 1, 10, key="item_Ns")
-        idx_label = stepper_slider("Item index", 1, n_items_sub, 1, 1, key="item_idx")
-    with col2:
-        noise_type = st.selectbox("Noise type", ["masking", "salt_and_pepper"], index=1)
-        noise_ratio = stepper_slider("Noise ratio", 0.0, 0.9, 0.1, 0.1, key="item_noise_ratio")
+    Nh = stepper_slider("N_h", 200, 800, cfg.DEFAULT_SCAFFOLD.Nh, 10, key="item_Nh")
+    n_items_sub = stepper_slider("N_s", 1, 1000, cfg.DEFAULT_SCAFFOLD.Nh // 2 + 1, 10, key="item_Ns")
+    idx_label = stepper_slider("Item index", 1, n_items_sub, 1, 1, key="item_idx")
+    noise_type = st.selectbox("Noise type", ["masking", "salt_and_pepper"], index=1)
+    noise_ratio = stepper_slider("Noise ratio", 0.0, 0.9, 0.1, 0.1, key="item_noise_ratio")
 
     mem_sub, items_sub = _get_item_mem(Nh, n_items_sub)
     target_idx = min(idx_label - 1, n_items_sub - 1)
