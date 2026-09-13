@@ -55,15 +55,15 @@ def stepper_slider(label, min_value, max_value, value, step, key):
         st.session_state[key] = value
     st.session_state[key] = min(max(st.session_state[key], min_value), max_value)
 
-    c1, c2, c3 = st.columns([1, 14, 1])
+    c1, c2, c3 = st.columns([14, 1, 1])
     with c1:
+        st.slider(label, min_value, max_value, step=step, key=key)
+    with c2:
         if st.button("-", key=f"{key}_minus"):
             st.session_state[key] = max(min_value, st.session_state[key] - step)
     with c3:
         if st.button("+", key=f"{key}_plus"):
             st.session_state[key] = min(max_value, st.session_state[key] + step)
-    with c2:
-        st.slider(label, min_value, max_value, step=step, key=key)
     return st.session_state[key]
 
 
