@@ -13,4 +13,4 @@ RUN chmod -R a+rwX /app
 
 EXPOSE 7860
 
-CMD ["voila", "vhs_refactor/report.ipynb", "--port=7860", "--no-browser", "--Voila.ip=0.0.0.0"]
+CMD ["streamlit", "run", "vhs_refactor/app.py", "--server.port=7860", "--server.address=0.0.0.0"]

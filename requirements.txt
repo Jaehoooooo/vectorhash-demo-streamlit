@@ -1,6 +1,4 @@
-voila
-ipykernel
-ipywidgets
+streamlit
 numpy
 scipy
 matplotlib
