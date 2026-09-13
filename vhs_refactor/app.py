@@ -49,6 +49,24 @@ def _render_open_figures():
 plt.show = _render_open_figures
 
 
+def stepper_slider(label, min_value, max_value, value, step, key):
+    """st.slider + 양옆 -/+ 버튼. key로 session_state에 값 보관."""
+    if key not in st.session_state:
+        st.session_state[key] = value
+    st.session_state[key] = min(max(st.session_state[key], min_value), max_value)
+
+    c1, c2, c3 = st.columns([1, 14, 1])
+    with c1:
+        if st.button("-", key=f"{key}_minus"):
+            st.session_state[key] = max(min_value, st.session_state[key] - step)
+    with c3:
+        if st.button("+", key=f"{key}_plus"):
+            st.session_state[key] = min(max_value, st.session_state[key] + step)
+    with c2:
+        st.slider(label, min_value, max_value, step=step, key=key)
+    return st.session_state[key]
+
+
 # =========================================================================
 # 1. Item Memory (구 2a)
 # =========================================================================
@@ -62,12 +80,12 @@ def render_item_memory():
     st.header("1. Item Memory")
     col1, col2 = st.columns(2)
     with col1:
-        Nh = st.slider("N_h", 200, 800, cfg.DEFAULT_SCAFFOLD.Nh, step=10)
-        n_items_sub = st.slider("N_s", 1, 1000, cfg.DEFAULT_SCAFFOLD.Nh // 2 + 1, step=10)
-        idx_label = st.slider("Item index", 1, n_items_sub, 1)
+        Nh = stepper_slider("N_h", 200, 800, cfg.DEFAULT_SCAFFOLD.Nh, 10, key="item_Nh")
+        n_items_sub = stepper_slider("N_s", 1, 1000, cfg.DEFAULT_SCAFFOLD.Nh // 2 + 1, 10, key="item_Ns")
+        idx_label = stepper_slider("Item index", 1, n_items_sub, 1, 1, key="item_idx")
     with col2:
         noise_type = st.selectbox("Noise type", ["masking", "salt_and_pepper"], index=1)
-        noise_ratio = st.slider("Noise ratio", 0.0, 0.9, 0.1, step=0.1)
+        noise_ratio = stepper_slider("Noise ratio", 0.0, 0.9, 0.1, 0.1, key="item_noise_ratio")
 
     mem_sub, items_sub = _get_item_mem(Nh, n_items_sub)
     target_idx = min(idx_label - 1, n_items_sub - 1)
@@ -89,9 +107,9 @@ def _get_3a_novel(_model, trained_length, novel_length, n_overlap):
 
 def render_spatial_memory():
     st.header("2. Spatial Memory")
-    trained_length = st.slider("Original path length:", 20, 300, 100, step=10)
-    novel_length = st.slider("New path length:", 20, 300, 100, step=10)
-    n_overlap = st.slider("# revisits:", 1, 10, 4, step=1)
+    trained_length = stepper_slider("Original path length:", 20, 300, 100, 10, key="spatial_trained_length")
+    novel_length = stepper_slider("New path length:", 20, 300, 100, 10, key="spatial_novel_length")
+    n_overlap = stepper_slider("# revisits:", 1, 10, 4, 1, key="spatial_n_overlap")
 
     model = _get_3a_model(trained_length)
     novel_model = _get_3a_novel(model, trained_length, novel_length, n_overlap)
@@ -191,9 +209,9 @@ def render_memory_palace_a():
     _, _, idxs_all, _, _ = _get_palace_books()
     n_cards = len(idxs_all)
 
-    Nh = st.slider("N_h", 10, 800, 200, step=5)
-    depth = st.slider("N_s", 2, n_cards, min(13, n_cards), step=1)
-    t = st.slider("Item index", 1, depth, 1) - 1
+    Nh = stepper_slider("N_h", 10, 800, 200, 5, key="palace_a_Nh")
+    depth = stepper_slider("N_s", 2, n_cards, min(13, n_cards), 1, key="palace_a_depth")
+    t = stepper_slider("Item index", 1, depth, 1, 1, key="palace_a_idx") - 1
 
     sbook_old, mbook_new, idxs_all, _, _ = _get_palace_books()
     S_clean, M_rec_clean = _get_4a_recall(Nh, depth)
@@ -241,10 +259,10 @@ def render_memory_palace_b():
     _, _, idxs_all, _, _ = _get_palace_books()
     n_cards = len(idxs_all)
 
-    Nh = st.slider("N_h", 10, 400, 200, step=5)
-    depth = st.slider("N_s", 2, n_cards, min(30, n_cards), step=1)
-    t = st.slider("Item index", 1, depth, 1) - 1
-    noise_ratio_vis = st.slider("Noise ratio", 0.0, 0.9, 0.3, step=0.1)
+    Nh = stepper_slider("N_h", 10, 400, 200, 5, key="palace_b_Nh")
+    depth = stepper_slider("N_s", 2, n_cards, min(30, n_cards), 1, key="palace_b_depth")
+    t = stepper_slider("Item index", 1, depth, 1, 1, key="palace_b_idx") - 1
+    noise_ratio_vis = stepper_slider("Noise ratio", 0.0, 0.9, 0.3, 0.1, key="palace_b_noise_ratio")
 
     scaf, S_seq, M_seq, P_seq, S_clean, Wms, Wsm_raw = _get_4b_pipeline(Nh, depth)
 
