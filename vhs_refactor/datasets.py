@@ -97,9 +97,5 @@ def prepare_sensory_data():
 
     np.arctanh(sbook_flattened, out=sbook_flattened)
 
-    print(f"최종 sbook_flattened 형태: {sbook_flattened.shape}")
-    print(f"값 범위: {np.min(sbook_flattened):.4f} ~ {np.max(sbook_flattened):.4f}")
-    print("=== 데이터 전처리 완료 ===\n")
-
     _sensory_data_cache = sbook_flattened
     return sbook_flattened

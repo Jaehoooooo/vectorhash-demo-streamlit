@@ -366,7 +366,6 @@ def render_node_states_panel(mem, items, target_idx, noise_type, noise_ratio, ex
     W_sh = extract_matrix(mem.Wsh)
     grid_code = mem.scaffold.grid_code
     g_true = mem.codewords[target_idx]
-    grid_idx_true = grid_code.decode_state(g_true)
 
     h_noisy = W_hs @ s_noisy
     logits_pre_wta = mem.scaffold.Wgh @ h_noisy  # WTA(argmax) 전 module별 실수값 logits
@@ -394,52 +393,32 @@ def render_node_states_panel(mem, items, target_idx, noise_type, noise_ratio, ex
         match_indices = np.where(np.all(codewords_arr == g_clean, axis=1))[0]
         closest_idx = int(match_indices[0]) if len(match_indices) > 0 else None
 
-    if g_clean is None:
-        print(f"item={target_idx + 1} -> n_iter=0, cleanup 미적용 (grid state 없음)")
-    else:
-        grid_idx = grid_code.decode_state(g_clean)
-        # module별 one-hot block 사이 bit(Hamming) 차이. grid_code.module_periods
-        # 순서 그대로(state_blocks가 그 순서로 쪼갬) 비교하고, one-hot이라 값이
-        # 다르면 항상 2(원래 자리 꺼짐 + 엉뚱한 자리 켜짐), 같으면 0.
-        true_blocks = grid_code.state_blocks(g_true)
-        clean_blocks = grid_code.state_blocks(g_clean)
-        module_dists = [int(np.sum(np.abs(tb.ravel() - cb.ravel())))
-                         for tb, cb in zip(true_blocks, clean_blocks)]
-        n_mismatched = sum(d > 0 for d in module_dists)
-        print(f"item={target_idx + 1} -> true grid state       = {grid_idx_true}")
-        print(f"item={target_idx + 1} -> recalled grid state    = {grid_idx}")
-        print(f"item={target_idx + 1} -> module diffs (one-hot bit diff per module) = {module_dists} "
-              f"| mismatched modules = {n_mismatched}/{len(module_dists)} "
-              f"| grid state {'EXACT MATCH' if n_mismatched == 0 else 'DIFFERS FROM TRUE'}")
-
     from experiments.experiment_spatial_navigation import plot_grid_modules_square
 
     fig, axes = plt.subplots(2, 3, figsize=(17, 9))
-    fig.suptitle(f"{exp_label} | item={target_idx + 1} | noise={noise_type} ({noise_ratio:.2f}) | "
-                 f"sensory recon cos_sim={cos_sim:.3f}", fontsize=14)
 
     axes[0, 0].imshow(s_orig_2d, cmap="gray")
-    axes[0, 0].set_title(f"1. Original Sensory (item #{target_idx + 1})")
+    axes[0, 0].set_title(f"Stored item #{target_idx + 1}")
     axes[0, 0].axis('off')
 
     axes[0, 1].imshow(s_noisy_2d, cmap="gray")
-    axes[0, 1].set_title("2. Noisy Sensory")
+    axes[0, 1].set_title("Noisy item")
     axes[0, 1].axis('off')
 
     axes[0, 2].imshow(s_rec_2d, cmap="gray")
-    title3_suffix = "None" if closest_idx is None else f"item #{closest_idx + 1}"
-    axes[0, 2].set_title(f"3. Reconstructed Sensory ({title3_suffix})")
+    title3_suffix = "None" if closest_idx is None else f"#{closest_idx + 1}"
+    axes[0, 2].set_title(f"Recalled item {title3_suffix} (cos_sim={cos_sim:.3f})")
     axes[0, 2].axis('off')
 
     plot_grid_modules_square(axes[1, 0], grid_code, g_true)
     axes[1, 0].set_title("Grid state (true)", fontsize=10)
 
     plot_grid_modules_square(axes[1, 1], grid_code, logits_pre_wta, vmin=None, vmax=None)
-    axes[1, 1].set_title("Grid logits (pre-WTA, raw)", fontsize=10)
+    axes[1, 1].set_title("Grid state (pre-WTA)", fontsize=10)
 
     if g_clean is not None:
         plot_grid_modules_square(axes[1, 2], grid_code, g_clean)
-        axes[1, 2].set_title("Grid state (recalled)", fontsize=10)
+        axes[1, 2].set_title("Grid state (post-WTA)", fontsize=10)
     else:
         axes[1, 2].axis('off')
 
