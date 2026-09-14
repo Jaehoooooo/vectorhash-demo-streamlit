@@ -84,8 +84,8 @@ def _get_item_mem(Nh, n_items_sub):
 
 def render_item_memory():
     st.header("1. Item Memory")
-    Nh = stepper_slider("N_h", 200, 800, cfg.DEFAULT_SCAFFOLD.Nh, 10, key="item_Nh")
-    n_items_sub = stepper_slider("N_s", 1, 1000, cfg.DEFAULT_SCAFFOLD.Nh // 2 + 1, 10, key="item_Ns")
+    Nh = stepper_slider("$N_h$", 200, 800, cfg.DEFAULT_SCAFFOLD.Nh, 10, key="item_Nh")
+    n_items_sub = stepper_slider("$N_s$", 1, 1000, cfg.DEFAULT_SCAFFOLD.Nh // 2 + 1, 10, key="item_Ns")
     idx_label = stepper_slider("Item index", 1, n_items_sub, 1, 1, key="item_idx")
     noise_type = st.selectbox("Noise type", ["masking", "salt_and_pepper"], index=1)
     noise_ratio = stepper_slider("Noise ratio", 0.0, 0.9, 0.1, 0.1, key="item_noise_ratio")
@@ -123,7 +123,7 @@ def render_spatial_memory():
 
 
 # =========================================================================
-# 3a/3b(Memory Palace)가 공유하는 데이터 소스: miniimagenet(old item) / 숫자카드(new item).
+# Memory Palace가 사용하는 데이터 소스: miniimagenet(old item) / 숫자카드(new item).
 # lambdas=(2,3,5), Ns=3600, seed=0으로 둘 다 동일해서 한 번만 계산해 공유한다.
 # =========================================================================
 _PALACE_LAMBDAS = (2, 3, 5)
@@ -187,57 +187,7 @@ def _get_palace_scaffold(Nh, gamma=0.6, thresh=0.5):
 
 
 # =========================================================================
-# 3a. Memory Palace: Reconstruction Beyond Hippocampus Capacity (구 4a)
-# =========================================================================
-@st.cache_resource(max_entries=1, show_spinner="Running recall sequence...")
-def _get_4a_recall(Nh, depth):
-    scaf = _get_palace_scaffold(Nh)
-    sbook_old, mbook_new, idxs_all, _, _ = _get_palace_books()
-    idxs_seq = idxs_all[:depth]
-    P_seq = scaf["pbook_flat"][:, :, idxs_seq]
-    S_seq = sbook_old[:, idxs_seq]
-    M_new = mbook_new[:, idxs_seq]
-
-    S_clean = recall_sequence_once(scaf, S_seq, P_seq, depth, np.random.default_rng(1))
-    S_addr1 = np.sign(S_clean[0])
-    Wms = M_new @ np.linalg.pinv(S_addr1)
-    M_rec_clean = Wms @ S_addr1
-    return S_clean, M_rec_clean
-
-
-def render_memory_palace_a():
-    st.header("3a. Memory Palace: Reconstruction Beyond Hippocampus Capacity ($N_h$)")
-    Ns = _PALACE_NS
-    img_h = img_w = int(round(np.sqrt(Ns)))
-    _, _, idxs_all, _, _ = _get_palace_books()
-    n_cards = len(idxs_all)
-
-    Nh = stepper_slider("N_h", 10, 800, 200, 5, key="palace_a_Nh")
-    depth = stepper_slider("N_s", 2, n_cards, min(13, n_cards), 1, key="palace_a_depth")
-    t = stepper_slider("Item index", 1, depth, 1, 1, key="palace_a_idx") - 1
-
-    sbook_old, mbook_new, idxs_all, _, _ = _get_palace_books()
-    S_clean, M_rec_clean = _get_4a_recall(Nh, depth)
-
-    true_s = sbook_old[:, idxs_all[t]]
-    true_m = mbook_new[:, idxs_all[t]]
-    panels = [
-        (true_s, f"Stored item #{t + 1}", None),
-        (S_clean[0, :, t], f"Recalled item #{t + 1} (cos_sim={cos_sim(S_clean[0, :, t], true_s):.3f})", None),
-        (true_m, "Mnemonic item", None),
-        (M_rec_clean[:, t], f"Recalled mnemonic item (cos_sim={cos_sim(M_rec_clean[:, t], true_m):.3f})", None),
-    ]
-    fig, axes = plt.subplots(1, len(panels), figsize=(3.1 * len(panels), 3.4))
-    for ax, (vec, title, _sim) in zip(axes, panels):
-        ax.imshow(vec.reshape(img_h, img_w), cmap="gray")
-        ax.set_title(title, fontsize=9)
-        ax.set_xticks([]); ax.set_yticks([])
-    plt.tight_layout()
-    plt.show()
-
-
-# =========================================================================
-# 3b. Memory Palace: Cleanup Test (구 4b)
+# 3. Memory Palace: Cleanup Test (구 4b)
 # =========================================================================
 @st.cache_resource(max_entries=1, show_spinner="Running cleanup pipeline...")
 def _get_4b_pipeline(Nh, depth):
@@ -256,14 +206,14 @@ def _get_4b_pipeline(Nh, depth):
 
 
 def render_memory_palace_b():
-    st.header("3b. Memory Palace: Cleanup Test")
+    st.header("3. Memory Palace")
     Ns = _PALACE_NS
     img_h = img_w = int(round(np.sqrt(Ns)))
     _, _, idxs_all, _, _ = _get_palace_books()
     n_cards = len(idxs_all)
 
-    Nh = stepper_slider("N_h", 10, 400, 200, 5, key="palace_b_Nh")
-    depth = stepper_slider("N_s", 2, n_cards, min(30, n_cards), 1, key="palace_b_depth")
+    Nh = stepper_slider("$N_h$", 10, 400, 200, 5, key="palace_b_Nh")
+    depth = stepper_slider("$N_s$", 2, n_cards, min(30, n_cards), 1, key="palace_b_depth")
     t = stepper_slider("Item index", 1, depth, 1, 1, key="palace_b_idx") - 1
     noise_ratio_vis = stepper_slider("Noise ratio", 0.0, 0.9, 0.3, 0.1, key="palace_b_noise_ratio")
 
@@ -308,14 +258,12 @@ st.title("Vector-HaSH")
 
 section = st.sidebar.radio(
     "Section",
-    ["1. Item Memory", "2. Spatial Memory", "3a. Memory Palace", "3b. Cleanup Test"],
+    ["1. Item Memory", "2. Spatial Memory", "3. Memory Palace"],
 )
 
 if section == "1. Item Memory":
     render_item_memory()
 elif section == "2. Spatial Memory":
     render_spatial_memory()
-elif section == "3a. Memory Palace":
-    render_memory_palace_a()
 else:
     render_memory_palace_b()
