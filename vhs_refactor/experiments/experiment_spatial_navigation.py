@@ -950,6 +950,8 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
         over_limit = any(c > _MAX_NODE_VISITS for c in novel_visit_count.values())
 
         remaining = novel_length - len(novel_path)
+        status = 0 if remaining == 0 else -1
+        
         if not over_limit and remaining > 0:
             forbidden_mask = np.zeros(Npos * Npos, dtype=np.bool_)
             for fx, fy in forbidden:
@@ -980,7 +982,7 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
         is_completed = (status == 0)
         
         # 2. 검증 조건에 추가
-        if not over_limit and is_completed and len(set(trained_path) & set(novel_path)) == n_overlap:
+        if not over_limit and is_completed and len(novel_path) == novel_length and len(set(trained_path) & set(novel_path)) == n_overlap:
             break
     else:
         raise RuntimeError("겹치지 않는 경로를 못 찾았습니다. n_overlap을 줄이거나 "
