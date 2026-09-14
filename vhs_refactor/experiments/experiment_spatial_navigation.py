@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import numpy as np
 import heapq
+from numba import njit
 import matplotlib.pyplot as plt
 from grid_utils import GridCode
 from scaffold import GridHPCScaffold
@@ -713,10 +714,97 @@ def visualize_realtime_trajectory_with_indices(room_size=10, n_steps=200):
 # [추가] fig4c 스타일 데모: 실제 이미지 sensory + 실제 경로 시각화 +
 # 재방문 복원 / 미방문 trajectory 예측 / sensory -> location 역추론
 # ---------------------------------------------------------
-_MAX_NODE_VISITS = 2  # 노드 하나가 이 횟수 넘게 방문되면(8자 한 번은 2회) 경로 통째로 재생성
+# _MAX_NODE_VISITS = 2  # 노드 하나가 이 횟수 넘게 방문되면(8자 한 번은 2회) 경로 통째로 재생성
+_MAX_NODE_VISITS = 1  # 8자 크로싱 완전 차단 테스트: 재방문 자체를 금지
+
+_MOVES_DX = np.array([1, -1, 0, 0], dtype=np.int64)
+_MOVES_DY = np.array([0, 0, 1, -1], dtype=np.int64)
 
 
-def build_fig4c_demo(trained_length=100, room_pad=3, seed=None, max_attempts=200):
+def _next_seed(seed, attempt):
+    """seed가 None이면(고정 안 함) 매 attempt OS 엔트로피로 새 정수 시드를 뽑는다
+    -- numba jit 함수는 np.random.seed(int)로만 시드를 받을 수 있어서 필요."""
+    if seed is not None:
+        return (seed + attempt) % (2**31 - 1)
+    return int(np.random.SeedSequence().generate_state(1)[0] % (2**31 - 1))
+
+
+@njit(cache=True)
+def _random_walk_numba(Npos, lo, hi, start_cell, n_steps, max_visits, forbidden_mask, visit_count, seed):
+    """self-avoiding + drift-bias random walk 한 번(한 attempt)을 컴파일된 코드로
+    실행. cell id = x*Npos+y. status: 0=n_steps 다 채움, 1=(forbidden에 막혀)
+    더 갈 곳 없어서 중간에 멈춤(무해, 짧은 경로로 인정), 2=한 칸을 max_visits
+    넘게 밟아서 이 attempt 전체가 무효(호출부가 통째로 재시도)."""
+    np.random.seed(seed)
+    path_cells = np.empty(n_steps + 1, dtype=np.int64)
+    path_cells[0] = start_cell
+    cur = start_cell
+    for step in range(n_steps):
+        x = cur // Npos
+        y = cur % Npos
+        valid_dx = np.empty(4, dtype=np.int64)
+        valid_dy = np.empty(4, dtype=np.int64)
+        valid_cell = np.empty(4, dtype=np.int64)
+        n_valid = 0
+        for d in range(4):
+            dx = _MOVES_DX[d]
+            dy = _MOVES_DY[d]
+            nx = x + dx
+            ny = y + dy
+            if nx < lo or nx >= hi or ny < lo or ny >= hi:
+                continue
+            ncell = nx * Npos + ny
+            if forbidden_mask[ncell]:
+                continue
+            valid_dx[n_valid] = dx
+            valid_dy[n_valid] = dy
+            valid_cell[n_valid] = ncell
+            n_valid += 1
+        if n_valid == 0:
+            return path_cells, step, 1
+
+        uv_dx = np.empty(4, dtype=np.int64)
+        uv_dy = np.empty(4, dtype=np.int64)
+        uv_cell = np.empty(4, dtype=np.int64)
+        n_unvisited = 0
+        for i in range(n_valid):
+            if visit_count[valid_cell[i]] == 0:
+                uv_dx[n_unvisited] = valid_dx[i]
+                uv_dy[n_unvisited] = valid_dy[i]
+                uv_cell[n_unvisited] = valid_cell[i]
+                n_unvisited += 1
+
+        if n_unvisited > 0:
+            cand_dx, cand_dy, cand_cell, n_cand = uv_dx, uv_dy, uv_cell, n_unvisited
+        else:
+            cand_dx, cand_dy, cand_cell, n_cand = valid_dx, valid_dy, valid_cell, n_valid
+
+        w = np.empty(n_cand, dtype=np.float64)
+        wsum = 0.0
+        for i in range(n_cand):
+            wi = 1.0 + max(0, cand_dx[i]) * 0.3 + max(0, cand_dy[i]) * 0.3
+            w[i] = wi
+            wsum += wi
+        r = np.random.random() * wsum
+        acc = 0.0
+        choice = n_cand - 1
+        for i in range(n_cand):
+            acc += w[i]
+            if r <= acc:
+                choice = i
+                break
+
+        nxt = cand_cell[choice]
+        visit_count[nxt] += 1
+        cur = nxt
+        path_cells[step + 1] = nxt
+        if visit_count[nxt] > max_visits:
+            return path_cells, step + 1, 2
+
+    return path_cells, n_steps, 0
+
+
+def build_fig4c_demo(trained_length=100, room_pad=1, seed=None, max_attempts=1000):
     """실제 이미지(prepare_sensory_data)를 실제 random-walk 경로("원래 경로",
     trained path) 위 각 위치에 결합해서 학습한다. VectorHASH_fig4e_random.ipynb의
     fig4c처럼 경로를 Npos x Npos 방 안(벽에서 room_pad칸 이상 떨어진 곳)에
@@ -733,52 +821,32 @@ def build_fig4c_demo(trained_length=100, room_pad=3, seed=None, max_attempts=200
     Npos = int(np.prod(scaf_cfg.module_periods))
     sbook_flattened = prepare_sensory_data()
 
-    moves4 = [(1, 0), (-1, 0), (0, 1), (0, -1)]
     lo, hi = room_pad, Npos - room_pad
+    forbidden_mask = np.zeros(Npos * Npos, dtype=np.bool_)  # 방 안 walk엔 forbidden 칸 없음, 벽만 제한
+    start_cell = (Npos // 2) * Npos + (Npos // 2)
 
+    # 자기 자신을 최대한 안 밟는(self-avoiding) 걸음을 우선 고르고(_random_walk_numba
+    # 안 unvisited 타이어), 안 밟은 칸이 하나도 없으면 이미 방문한 칸이라도 밟는다
+    # (8자 크로싱 완전 차단 테스트 중이라 엣지 재사용 회피 타이어는 뺐음 -- 위
+    # _MAX_NODE_VISITS 주석 참고). fig4e_random.ipynb의 fig4c처럼 drift bias도 적용.
     for attempt in range(max_attempts):
-        rng = np.random.default_rng(None if seed is None else seed + attempt)
-        x, y = Npos // 2, Npos // 2
-        path_xy = [(x, y)]
-        velocities = []
-        visited = {(x, y)}
-        visited_edges = set()
-        visit_count = {(x, y): 1}
-        over_limit = False
-        for _ in range(trained_length):
-            valid = [(dx, dy) for dx, dy in moves4 if lo <= x + dx < hi and lo <= y + dy < hi]
-            # 자기 자신을 최대한 안 밟는(self-avoiding) 걸음을 우선 고른다 -- 그래야
-            # trained path가 방 안에서 촘촘하게 뭉치지 않고(자기 교차 최소화), novel
-            # trajectory가 나중에 이 경로를 피해서 지나갈 공간이 넉넉히 남는다.
-            # 안 밟은 칸이 하나도 없으면, 노드 재방문은 허용하되(8자 모양처럼 새로운
-            # 엣지로 다시 지나가는 건 괜찮음) 이미 지나온 엣지(같은 두 칸 사이 이동)만
-            # 최대한 피한다 -- 그래야 막다른 곳에서 왔던 길을 그대로 되짚어가며
-            # 제자리를 맴도는 것만 막는다. 그마저도 없을 때만(완전히 갇힌 경우) 엣지
-            # 재사용을 허용한다.
-            unvisited = [(dx, dy) for dx, dy in valid if (x + dx, y + dy) not in visited]
-            unused_edge = [(dx, dy) for dx, dy in valid
-                            if frozenset({(x, y), (x + dx, y + dy)}) not in visited_edges]
-            candidates = unvisited or unused_edge or valid
-            # fig4e_random.ipynb의 fig4c처럼 한쪽으로 살짝 흘러가게(drift bias) 하면
-            # 경로가 너무 조밀하게 자기 자신을 둘러싸는 것(스스로 갇히는 지점)을 줄여준다.
-            w = np.array([1.0 + max(0, dx) * 0.3 + max(0, dy) * 0.3 for dx, dy in candidates])
-            w = w / w.sum()
-            dx, dy = candidates[rng.choice(len(candidates), p=w)]
-            visited_edges.add(frozenset({(x, y), (x + dx, y + dy)}))
-            x, y = x + dx, y + dy
-            path_xy.append((x, y))
-            velocities.append((dx, dy))
-            visited.add((x, y))
-            visit_count[(x, y)] = visit_count.get((x, y), 0) + 1
-            if visit_count[(x, y)] > _MAX_NODE_VISITS:
-                over_limit = True
-                break
-        if not over_limit:
+        seed_val = _next_seed(seed, attempt)
+        visit_count = np.zeros(Npos * Npos, dtype=np.int64)
+        visit_count[start_cell] = 1
+        path_cells, n_filled, status = _random_walk_numba(
+            Npos, lo, hi, start_cell, trained_length, _MAX_NODE_VISITS, forbidden_mask, visit_count, seed_val
+        )
+        if status != 2:
             break
     else:
         raise RuntimeError("같은 칸을 너무 자주 밟지 않는 경로를 못 찾았습니다. "
                             "room_pad를 늘리거나 trained_length를 줄여보세요.")
-    path_xy = np.array(path_xy)  # (trained_length+1, 2), 방 안에 갇힌 물리 좌표
+    path_cells = path_cells[: n_filled + 1]  # status==1이면 벽/forbidden에 막혀 조기 종료된 것
+
+    xs = path_cells // Npos
+    ys = path_cells % Npos
+    path_xy = np.stack([xs, ys], axis=1)  # (n_filled+1, 2), 방 안에 갇힌 물리 좌표
+    velocities = [(int(xs[i + 1] - xs[i]), int(ys[i + 1] - ys[i])) for i in range(n_filled)]
 
     start_indices = [(int(path_xy[0][0]) % k, int(path_xy[0][1]) % k) for k in grid_code.module_periods]
     landmarks = [sbook_flattened[:, int(px) * Npos + int(py)] for px, py in path_xy]
@@ -824,7 +892,7 @@ def _bfs_shortest_path(start, target, forbidden, lo, hi, rng):
     return path
 
 
-def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_attempts=200):
+def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_attempts=1000):
     """원래 경로(model)와 정확히 n_overlap개 지점에서만 겹치는("재방문") 새
     경로를 만든다. 원래 경로 위 지정한 n_overlap개(anchor) 위치만 지나가게
     허용하고, 나머지 원래 경로 칸은 전부 회피(forbidden)한다 -- fig4e_random
@@ -834,7 +902,6 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
     Npos, pad = model["Npos"], model["room_pad"]
     trained_path = [tuple(int(v) for v in p) for p in model["path_xy"]]
     lo, hi = pad, Npos - pad
-    moves4 = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
     n_overlap = min(n_overlap, len(trained_path))
 
@@ -876,34 +943,31 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
         forbidden |= set(anchors)
 
         # 남은 길이는 forbidden을 피해서, build_fig4c_demo와 같은 방식(self-avoiding
-        # + drift bias, 노드 재방문은 허용하되 엣지 재사용은 최대한 회피)의
-        # 무작위 보행으로 패딩.
-        novel_visited = set(novel_path)
-        novel_visited_edges = {frozenset({a, b}) for a, b in zip(novel_path, novel_path[1:])}
+        # + drift bias)의 무작위 보행(_random_walk_numba)으로 패딩.
         novel_visit_count = {}
         for cell in novel_path:
             novel_visit_count[cell] = novel_visit_count.get(cell, 0) + 1
         over_limit = any(c > _MAX_NODE_VISITS for c in novel_visit_count.values())
-        while not over_limit and len(novel_path) < novel_length:
-            cx, cy = novel_path[-1]
-            valid = [(dx, dy) for dx, dy in moves4
-                     if lo <= cx + dx < hi and lo <= cy + dy < hi
-                     and (cx + dx, cy + dy) not in forbidden]
-            if not valid:
-                break
-            unvisited = [(dx, dy) for dx, dy in valid if (cx + dx, cy + dy) not in novel_visited]
-            unused_edge = [(dx, dy) for dx, dy in valid
-                            if frozenset({(cx, cy), (cx + dx, cy + dy)}) not in novel_visited_edges]
-            candidates = unvisited or unused_edge or valid
-            w = np.array([1.0 + max(0, dx) * 0.3 + max(0, dy) * 0.3 for dx, dy in candidates])
-            w = w / w.sum()
-            dx, dy = candidates[rng.choice(len(candidates), p=w)]
-            nxt = (cx + dx, cy + dy)
-            novel_visited_edges.add(frozenset({(cx, cy), nxt}))
-            novel_path.append(nxt)
-            novel_visited.add(nxt)
-            novel_visit_count[nxt] = novel_visit_count.get(nxt, 0) + 1
-            if novel_visit_count[nxt] > _MAX_NODE_VISITS:
+
+        remaining = novel_length - len(novel_path)
+        if not over_limit and remaining > 0:
+            forbidden_mask = np.zeros(Npos * Npos, dtype=np.bool_)
+            for fx, fy in forbidden:
+                forbidden_mask[fx * Npos + fy] = True
+            visit_count = np.zeros(Npos * Npos, dtype=np.int64)
+            for (vx, vy), c in novel_visit_count.items():
+                visit_count[vx * Npos + vy] = c
+
+            last_x, last_y = novel_path[-1]
+            start_cell = last_x * Npos + last_y
+            seed_val = _next_seed(seed, attempt)
+            path_cells, n_filled, status = _random_walk_numba(
+                Npos, lo, hi, start_cell, remaining, _MAX_NODE_VISITS, forbidden_mask, visit_count, seed_val
+            )
+            xs = path_cells[1:n_filled + 1] // Npos
+            ys = path_cells[1:n_filled + 1] % Npos
+            novel_path.extend(zip(xs.tolist(), ys.tolist()))
+            if status == 2:
                 over_limit = True
 
         # 최종 검증: 겹치는 지점 수가 정확히 n_overlap이고, 같은 칸을 너무 자주

@@ -36,6 +36,15 @@ from experiments.experiment_memory_palace import (
 
 st.set_page_config(page_title="Vector-HaSH demo", layout="wide")
 
+# 슬라이더(stepper_slider)들 사이 상하 간격 압축: 기본 vertical block gap이 넓어서
+# 슬라이더 여러 개 쌓이면 세로로 길어짐.
+st.markdown("""
+<style>
+div[data-testid="stVerticalBlock"] { gap: 0.4rem; }
+div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
+</style>
+""", unsafe_allow_html=True)
+
 
 def _render_open_figures():
     """plt.show()를 st.pyplot()으로 리다이렉트: 기존 실험 코드(plot 함수들)를
@@ -113,8 +122,8 @@ def _get_3a_novel(_model, trained_length, novel_length):
 
 def render_spatial_memory():
     st.header("2. Spatial Memory")
-    trained_length = stepper_slider("Original path length:", 20, 300, 100, 10, key="spatial_trained_length")
-    novel_length = stepper_slider("New path length:", 20, 300, 100, 10, key="spatial_novel_length")
+    trained_length = stepper_slider("Original path length:", 20, 200, 100, 10, key="spatial_trained_length")
+    novel_length = stepper_slider("New path length:", 20, 200, 100, 10, key="spatial_novel_length")
 
     model = _get_3a_model(trained_length)
     novel_model = _get_3a_novel(model, trained_length, novel_length)
