@@ -713,7 +713,10 @@ def visualize_realtime_trajectory_with_indices(room_size=10, n_steps=200):
 # [추가] fig4c 스타일 데모: 실제 이미지 sensory + 실제 경로 시각화 +
 # 재방문 복원 / 미방문 trajectory 예측 / sensory -> location 역추론
 # ---------------------------------------------------------
-def build_fig4c_demo(trained_length=100, room_pad=3, seed=None):
+_MAX_NODE_VISITS = 2  # 노드 하나가 이 횟수 넘게 방문되면(8자 한 번은 2회) 경로 통째로 재생성
+
+
+def build_fig4c_demo(trained_length=100, room_pad=3, seed=None, max_attempts=200):
     """실제 이미지(prepare_sensory_data)를 실제 random-walk 경로("원래 경로",
     trained path) 위 각 위치에 결합해서 학습한다. VectorHASH_fig4e_random.ipynb의
     fig4c처럼 경로를 Npos x Npos 방 안(벽에서 room_pad칸 이상 떨어진 곳)에
@@ -730,38 +733,51 @@ def build_fig4c_demo(trained_length=100, room_pad=3, seed=None):
     Npos = int(np.prod(scaf_cfg.module_periods))
     sbook_flattened = prepare_sensory_data()
 
-    rng = np.random.default_rng(seed)
     moves4 = [(1, 0), (-1, 0), (0, 1), (0, -1)]
     lo, hi = room_pad, Npos - room_pad
-    x, y = Npos // 2, Npos // 2
-    path_xy = [(x, y)]
-    velocities = []
-    visited = {(x, y)}
-    visited_edges = set()
-    for _ in range(trained_length):
-        valid = [(dx, dy) for dx, dy in moves4 if lo <= x + dx < hi and lo <= y + dy < hi]
-        # 자기 자신을 최대한 안 밟는(self-avoiding) 걸음을 우선 고른다 -- 그래야
-        # trained path가 방 안에서 촘촘하게 뭉치지 않고(자기 교차 최소화), novel
-        # trajectory가 나중에 이 경로를 피해서 지나갈 공간이 넉넉히 남는다.
-        # 안 밟은 칸이 하나도 없으면, 노드 재방문은 허용하되(8자 모양처럼 새로운
-        # 엣지로 다시 지나가는 건 괜찮음) 이미 지나온 엣지(같은 두 칸 사이 이동)만
-        # 최대한 피한다 -- 그래야 막다른 곳에서 왔던 길을 그대로 되짚어가며
-        # 제자리를 맴도는 것만 막는다. 그마저도 없을 때만(완전히 갇힌 경우) 엣지
-        # 재사용을 허용한다.
-        unvisited = [(dx, dy) for dx, dy in valid if (x + dx, y + dy) not in visited]
-        unused_edge = [(dx, dy) for dx, dy in valid
-                        if frozenset({(x, y), (x + dx, y + dy)}) not in visited_edges]
-        candidates = unvisited or unused_edge or valid
-        # fig4e_random.ipynb의 fig4c처럼 한쪽으로 살짝 흘러가게(drift bias) 하면
-        # 경로가 너무 조밀하게 자기 자신을 둘러싸는 것(스스로 갇히는 지점)을 줄여준다.
-        w = np.array([1.0 + max(0, dx) * 0.3 + max(0, dy) * 0.3 for dx, dy in candidates])
-        w = w / w.sum()
-        dx, dy = candidates[rng.choice(len(candidates), p=w)]
-        visited_edges.add(frozenset({(x, y), (x + dx, y + dy)}))
-        x, y = x + dx, y + dy
-        path_xy.append((x, y))
-        velocities.append((dx, dy))
-        visited.add((x, y))
+
+    for attempt in range(max_attempts):
+        rng = np.random.default_rng(None if seed is None else seed + attempt)
+        x, y = Npos // 2, Npos // 2
+        path_xy = [(x, y)]
+        velocities = []
+        visited = {(x, y)}
+        visited_edges = set()
+        visit_count = {(x, y): 1}
+        over_limit = False
+        for _ in range(trained_length):
+            valid = [(dx, dy) for dx, dy in moves4 if lo <= x + dx < hi and lo <= y + dy < hi]
+            # 자기 자신을 최대한 안 밟는(self-avoiding) 걸음을 우선 고른다 -- 그래야
+            # trained path가 방 안에서 촘촘하게 뭉치지 않고(자기 교차 최소화), novel
+            # trajectory가 나중에 이 경로를 피해서 지나갈 공간이 넉넉히 남는다.
+            # 안 밟은 칸이 하나도 없으면, 노드 재방문은 허용하되(8자 모양처럼 새로운
+            # 엣지로 다시 지나가는 건 괜찮음) 이미 지나온 엣지(같은 두 칸 사이 이동)만
+            # 최대한 피한다 -- 그래야 막다른 곳에서 왔던 길을 그대로 되짚어가며
+            # 제자리를 맴도는 것만 막는다. 그마저도 없을 때만(완전히 갇힌 경우) 엣지
+            # 재사용을 허용한다.
+            unvisited = [(dx, dy) for dx, dy in valid if (x + dx, y + dy) not in visited]
+            unused_edge = [(dx, dy) for dx, dy in valid
+                            if frozenset({(x, y), (x + dx, y + dy)}) not in visited_edges]
+            candidates = unvisited or unused_edge or valid
+            # fig4e_random.ipynb의 fig4c처럼 한쪽으로 살짝 흘러가게(drift bias) 하면
+            # 경로가 너무 조밀하게 자기 자신을 둘러싸는 것(스스로 갇히는 지점)을 줄여준다.
+            w = np.array([1.0 + max(0, dx) * 0.3 + max(0, dy) * 0.3 for dx, dy in candidates])
+            w = w / w.sum()
+            dx, dy = candidates[rng.choice(len(candidates), p=w)]
+            visited_edges.add(frozenset({(x, y), (x + dx, y + dy)}))
+            x, y = x + dx, y + dy
+            path_xy.append((x, y))
+            velocities.append((dx, dy))
+            visited.add((x, y))
+            visit_count[(x, y)] = visit_count.get((x, y), 0) + 1
+            if visit_count[(x, y)] > _MAX_NODE_VISITS:
+                over_limit = True
+                break
+        if not over_limit:
+            break
+    else:
+        raise RuntimeError("같은 칸을 너무 자주 밟지 않는 경로를 못 찾았습니다. "
+                            "room_pad를 늘리거나 trained_length를 줄여보세요.")
     path_xy = np.array(path_xy)  # (trained_length+1, 2), 방 안에 갇힌 물리 좌표
 
     start_indices = [(int(path_xy[0][0]) % k, int(path_xy[0][1]) % k) for k in grid_code.module_periods]
@@ -864,7 +880,11 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
         # 무작위 보행으로 패딩.
         novel_visited = set(novel_path)
         novel_visited_edges = {frozenset({a, b}) for a, b in zip(novel_path, novel_path[1:])}
-        while len(novel_path) < novel_length:
+        novel_visit_count = {}
+        for cell in novel_path:
+            novel_visit_count[cell] = novel_visit_count.get(cell, 0) + 1
+        over_limit = any(c > _MAX_NODE_VISITS for c in novel_visit_count.values())
+        while not over_limit and len(novel_path) < novel_length:
             cx, cy = novel_path[-1]
             valid = [(dx, dy) for dx, dy in moves4
                      if lo <= cx + dx < hi and lo <= cy + dy < hi
@@ -882,10 +902,14 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
             novel_visited_edges.add(frozenset({(cx, cy), nxt}))
             novel_path.append(nxt)
             novel_visited.add(nxt)
+            novel_visit_count[nxt] = novel_visit_count.get(nxt, 0) + 1
+            if novel_visit_count[nxt] > _MAX_NODE_VISITS:
+                over_limit = True
 
-        # 최종 검증: 실제로 겹치는 지점 수가 정확히 n_overlap인지 확인하고,
-        # 아니면(예: 패딩 무작위 보행이 우연히 다른 anchor를 또 밟은 경우) 재시도한다.
-        if len(set(trained_path) & set(novel_path)) == n_overlap:
+        # 최종 검증: 겹치는 지점 수가 정확히 n_overlap이고, 같은 칸을 너무 자주
+        # 밟지 않았는지 확인한다. 둘 중 하나라도 어긋나면(예: 패딩 무작위 보행이
+        # 우연히 다른 anchor를 또 밟았거나, 한 칸을 3번 넘게 밟았거나) 통째로 재시도한다.
+        if not over_limit and len(set(trained_path) & set(novel_path)) == n_overlap:
             break
     else:
         raise RuntimeError("겹치지 않는 경로를 못 찾았습니다. n_overlap을 줄이거나 "
