@@ -892,7 +892,7 @@ def _bfs_shortest_path(start, target, forbidden, lo, hi, rng):
     return path
 
 
-def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_attempts=1000):
+def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_attempts=3000):
     """원래 경로(model)와 정확히 n_overlap개 지점에서만 겹치는("재방문") 새
     경로를 만든다. 원래 경로 위 지정한 n_overlap개(anchor) 위치만 지나가게
     허용하고, 나머지 원래 경로 칸은 전부 회피(forbidden)한다 -- fig4e_random
