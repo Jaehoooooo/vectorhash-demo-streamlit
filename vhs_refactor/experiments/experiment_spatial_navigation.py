@@ -737,19 +737,27 @@ def build_fig4c_demo(trained_length=100, room_pad=3, seed=None):
     path_xy = [(x, y)]
     velocities = []
     visited = {(x, y)}
+    visited_edges = set()
     for _ in range(trained_length):
         valid = [(dx, dy) for dx, dy in moves4 if lo <= x + dx < hi and lo <= y + dy < hi]
         # 자기 자신을 최대한 안 밟는(self-avoiding) 걸음을 우선 고른다 -- 그래야
         # trained path가 방 안에서 촘촘하게 뭉치지 않고(자기 교차 최소화), novel
         # trajectory가 나중에 이 경로를 피해서 지나갈 공간이 넉넉히 남는다.
-        # 안 밟은 칸이 하나도 없는 막다른 곳일 때만 예외적으로 이미 밟은 칸으로 후퇴한다.
+        # 안 밟은 칸이 하나도 없으면, 노드 재방문은 허용하되(8자 모양처럼 새로운
+        # 엣지로 다시 지나가는 건 괜찮음) 이미 지나온 엣지(같은 두 칸 사이 이동)만
+        # 최대한 피한다 -- 그래야 막다른 곳에서 왔던 길을 그대로 되짚어가며
+        # 제자리를 맴도는 것만 막는다. 그마저도 없을 때만(완전히 갇힌 경우) 엣지
+        # 재사용을 허용한다.
         unvisited = [(dx, dy) for dx, dy in valid if (x + dx, y + dy) not in visited]
-        candidates = unvisited if unvisited else valid
+        unused_edge = [(dx, dy) for dx, dy in valid
+                        if frozenset({(x, y), (x + dx, y + dy)}) not in visited_edges]
+        candidates = unvisited or unused_edge or valid
         # fig4e_random.ipynb의 fig4c처럼 한쪽으로 살짝 흘러가게(drift bias) 하면
         # 경로가 너무 조밀하게 자기 자신을 둘러싸는 것(스스로 갇히는 지점)을 줄여준다.
         w = np.array([1.0 + max(0, dx) * 0.3 + max(0, dy) * 0.3 for dx, dy in candidates])
         w = w / w.sum()
         dx, dy = candidates[rng.choice(len(candidates), p=w)]
+        visited_edges.add(frozenset({(x, y), (x + dx, y + dy)}))
         x, y = x + dx, y + dy
         path_xy.append((x, y))
         velocities.append((dx, dy))
@@ -852,8 +860,10 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
         forbidden |= set(anchors)
 
         # 남은 길이는 forbidden을 피해서, build_fig4c_demo와 같은 방식(self-avoiding
-        # + drift bias)의 무작위 보행으로 패딩.
+        # + drift bias, 노드 재방문은 허용하되 엣지 재사용은 최대한 회피)의
+        # 무작위 보행으로 패딩.
         novel_visited = set(novel_path)
+        novel_visited_edges = {frozenset({a, b}) for a, b in zip(novel_path, novel_path[1:])}
         while len(novel_path) < novel_length:
             cx, cy = novel_path[-1]
             valid = [(dx, dy) for dx, dy in moves4
@@ -862,11 +872,14 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
             if not valid:
                 break
             unvisited = [(dx, dy) for dx, dy in valid if (cx + dx, cy + dy) not in novel_visited]
-            candidates = unvisited if unvisited else valid
+            unused_edge = [(dx, dy) for dx, dy in valid
+                            if frozenset({(cx, cy), (cx + dx, cy + dy)}) not in novel_visited_edges]
+            candidates = unvisited or unused_edge or valid
             w = np.array([1.0 + max(0, dx) * 0.3 + max(0, dy) * 0.3 for dx, dy in candidates])
             w = w / w.sum()
             dx, dy = candidates[rng.choice(len(candidates), p=w)]
             nxt = (cx + dx, cy + dy)
+            novel_visited_edges.add(frozenset({(cx, cy), nxt}))
             novel_path.append(nxt)
             novel_visited.add(nxt)
 
