@@ -881,7 +881,7 @@ def plot_paths(model, novel_model=None, title="Grid world", unvisited_steps=None
     from matplotlib.ticker import MaxNLocator
     path_xy = model["path_xy"]
     fig, ax = plt.subplots(figsize=(6.8, 6.8))
-    ax.plot(path_xy[0, 0], path_xy[0, 1], "o", color="black", markersize=8, label="start location")
+    ax.plot(path_xy[0, 0], path_xy[0, 1], "o", color="black", markersize=4, label="start location")
     ax.plot(path_xy[:, 0], path_xy[:, 1], "-", color="black", label="original path")
     if current_step is not None:
         cx, cy = path_xy[current_step]
@@ -889,7 +889,7 @@ def plot_paths(model, novel_model=None, title="Grid world", unvisited_steps=None
 
     if novel_model is not None:
         novel_xy = novel_model["novel_xy"]
-        ax.plot(novel_xy[:, 0], novel_xy[:, 1], "-", color="tab:blue", label="new path")
+        ax.plot(novel_xy[:, 0], novel_xy[:, 1], "-", color="blue", linewidth=1.5, label="new path")
         overlap_steps = novel_model["overlap_steps"]
         overlap = novel_xy[overlap_steps]
         # t=0은 항상 novel path의 시작점(=trained path 시작점)이라 "start location"과
@@ -897,14 +897,14 @@ def plot_paths(model, novel_model=None, title="Grid world", unvisited_steps=None
         non_start = [t != 0 for t in overlap_steps]
         if any(non_start):
             ax.plot(overlap[non_start, 0], overlap[non_start, 1], "o", color="red", markersize=5,
-                    markerfacecolor="none", label="revisit location")
+                    label="revisit location")
         if show_revisit_labels:
             for t, (px, py) in zip(overlap_steps, overlap):
                 ax.annotate(f"t={t}", xy=(px, py), xytext=(3, 3), textcoords="offset points",
                             fontsize=8, color="firebrick")
         if unvisited_steps:
             unvisited = novel_xy[list(unvisited_steps)]
-            ax.plot(unvisited[:, 0], unvisited[:, 1], "x", color="tab:green", markersize=4, mew=1.2,
+            ax.plot(unvisited[:, 0], unvisited[:, 1], "x", color="orange", markersize=4, mew=1.2,
                     label="novel location")
 
     ax.set_xlabel("x"); ax.set_ylabel("y")
