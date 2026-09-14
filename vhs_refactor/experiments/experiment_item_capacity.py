@@ -395,7 +395,7 @@ def render_node_states_panel(mem, items, target_idx, noise_type, noise_ratio, ex
 
     from experiments.experiment_spatial_navigation import plot_grid_modules_square
 
-    fig, axes = plt.subplots(2, 3, figsize=(12, 7))
+    fig, axes = plt.subplots(2, 3, figsize=(9, 5.25))
 
     axes[0, 0].imshow(s_orig_2d, cmap="gray")
     axes[0, 0].set_title(f"Stored item #{target_idx + 1}", fontsize=10)
