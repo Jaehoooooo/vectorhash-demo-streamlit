@@ -994,25 +994,27 @@ def plot_paths(model, novel_model=None, title="Grid world", unvisited_steps=None
     (미방문 step 인덱스들) 초록 X로 추가 표시.
     show_revisit_labels=False면 재방문 지점의 "t=n" 라벨을 끈다.
     current_step을 주면 trained path 위 그 step 위치를 검은 다이아몬드로 표시."""
-    from matplotlib.ticker import MaxNLocator
+    from matplotlib.ticker import MultipleLocator
     path_xy = model["path_xy"]
+    path_linewidth = 1.5
     fig, ax = plt.subplots(figsize=(6.8, 6.8))
     ax.plot(path_xy[0, 0], path_xy[0, 1], "o", color="black", markersize=4, label="start location")
-    ax.plot(path_xy[:, 0], path_xy[:, 1], "-", color="black", label="original path")
+    ax.plot(path_xy[:, 0], path_xy[:, 1], "-", color="dimgray", alpha=1.0, linewidth=path_linewidth,
+            label="original path")
     if current_step is not None:
         cx, cy = path_xy[current_step]
         ax.plot(cx, cy, "D", color="black", markersize=5, label=f"current (t={current_step})")
 
     if novel_model is not None:
         novel_xy = novel_model["novel_xy"]
-        ax.plot(novel_xy[:, 0], novel_xy[:, 1], "-", color="blue", linewidth=1.5, label="new path")
+        ax.plot(novel_xy[:, 0], novel_xy[:, 1], "-", color="blue", linewidth=path_linewidth, label="new path")
         overlap_steps = novel_model["overlap_steps"]
         overlap = novel_xy[overlap_steps]
         # t=0은 항상 novel path의 시작점(=trained path 시작점)이라 "start location"과
         # 겹침 -- revisit 표시는 t=0 빼고, 라벨(t=0)은 유지.
         non_start = [t != 0 for t in overlap_steps]
         if any(non_start):
-            ax.plot(overlap[non_start, 0], overlap[non_start, 1], "o", color="red", markersize=5,
+            ax.plot(overlap[non_start, 0], overlap[non_start, 1], "o", color="red", markersize=4,
                     label="revisit location")
         if show_revisit_labels:
             for t, (px, py) in zip(overlap_steps, overlap):
@@ -1020,17 +1022,21 @@ def plot_paths(model, novel_model=None, title="Grid world", unvisited_steps=None
                             fontsize=8, color="firebrick")
         if unvisited_steps:
             unvisited = novel_xy[list(unvisited_steps)]
-            ax.plot(unvisited[:, 0], unvisited[:, 1], "x", color="orange", markersize=4, mew=1.2,
+            ax.plot(unvisited[:, 0], unvisited[:, 1], "x", color="orange", markersize=6, mew=2,
                     label="novel location")
+            if show_revisit_labels:
+                for t, (px, py) in zip(unvisited_steps, unvisited):
+                    ax.annotate(f"t={t}", xy=(px, py), xytext=(3, 3), textcoords="offset points",
+                                fontsize=8, color="darkorange")
 
     ax.set_xlabel("x"); ax.set_ylabel("y")
-    ax.set_title(title)
+    ax.set_title(title, fontsize=14, fontweight="bold")
     ax.set_aspect("equal")
     ax.set_box_aspect(1)
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
-    plt.tight_layout()
+    ax.xaxis.set_major_locator(MultipleLocator(5))
+    ax.yaxis.set_major_locator(MultipleLocator(5))
+    ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2)
+    plt.tight_layout(rect=(0, 0.08, 1, 1))
     plt.show()
 
 
@@ -1133,7 +1139,7 @@ def _plot_novel_step_column(axes, col, t, model, novel_model):
     return cos
 
 
-def _plot_novel_steps_grid(model, novel_model, selected, suptitle):
+def _plot_novel_steps_grid(model, novel_model, selected, suptitle, show_row_labels=True):
     n_rows = 4  # True sensory / Recall sensory / grid state(모듈 전체, 한 패널) / HPC state
     n_show = len(selected)
     # grid state(row 2) 실제 내용은 sheared 마름모라 가로세로 비율이 ~3:1 (넓적함).
@@ -1149,11 +1155,12 @@ def _plot_novel_steps_grid(model, novel_model, selected, suptitle):
     cos_list = [_plot_novel_step_column(axes, col, t, model, novel_model)
                 for col, t in enumerate(selected)]
 
-    row_labels = ["True", "Recall", "Grid state", "HPC state"]
-    for row, label in enumerate(row_labels):
-        axes[row, 0].annotate(label, xy=(-0.15, 0.5), xycoords="axes fraction",
-                               ha="right", va="center", fontsize=12, fontweight="bold",
-                               rotation=90)
+    if show_row_labels:
+        row_labels = ["True", "Recall", "Grid state", "HPC state"]
+        for row, label in enumerate(row_labels):
+            axes[row, 0].annotate(label, xy=(-0.15, 0.5), xycoords="axes fraction",
+                                   ha="right", va="center", fontsize=12, fontweight="bold",
+                                   rotation=90)
 
     fig.suptitle(suptitle, fontsize=14, fontweight="bold")
     # tight_layout()은 axes마다 get_tightbbox(텍스트 렌더링)를 다 계산해야 해서
@@ -1169,8 +1176,8 @@ def demo_revisit_predictions(model, novel_model, n_revisits=10, seed=2):
     뽑아서, 그 지점에서 예측되는 sensory를 실제 landmark와 비교한다
     (fig4c cell 6 스타일: 위 True / 아래 Recall). 이 지점들은 학습 때 실제로
     결합(binding)됐던 위치라 recall이 잘 됨."""
-    overlap_steps = novel_model["overlap_steps"]
-    if not overlap_steps:
+    overlap_steps = [t for t in novel_model["overlap_steps"] if t != 0]  # t=0은 시작점(=novel path 시작)과
+    if not overlap_steps:                                                # 겹치는 자명한 지점이라 제외
         return []
 
     rng = np.random.default_rng(seed)
@@ -1180,18 +1187,16 @@ def demo_revisit_predictions(model, novel_model, n_revisits=10, seed=2):
     return _plot_novel_steps_grid(model, novel_model, selected, suptitle)
 
 
-def plot_unvisited_distance_map(model, novel_model, n_show=5):
-    """미방문 지점들 중 학습된 경로(model["path_xy"])에 가장 가까운 n_show개를
-    골라 지도에 표시 (재방문 지점은 빨간 원). demo_unvisited_by_distance에서
-    쓸 unvisited step 목록을 반환."""
+def plot_unvisited_distance_map(model, novel_model, n_show=2, seed=2):
+    """미방문 지점들 중 n_show개를 무작위로 골라 지도에 표시 (재방문 지점은
+    빨간 원). demo_unvisited_by_distance에서 쓸 unvisited step 목록을 반환."""
     candidates = _unvisited_steps(model, novel_model)
     if not candidates:
         return []
 
-    trained_xy = model["path_xy"]
-    novel_xy = novel_model["novel_xy"]
-    dist = {t: int(np.min(np.abs(trained_xy - novel_xy[t]).sum(axis=1))) for t in candidates}
-    unvisited = sorted(candidates, key=lambda t: dist[t])[:n_show]
+    rng = np.random.default_rng(seed)
+    n_show = min(n_show, len(candidates))
+    unvisited = sorted(rng.choice(candidates, size=n_show, replace=False).tolist())
 
     plot_paths(model, novel_model, title="Grid world", unvisited_steps=unvisited)
     return unvisited
@@ -1203,7 +1208,8 @@ def demo_unvisited_by_distance(model, novel_model, unvisited):
     부정확함을 확인할 수 있다."""
     if not unvisited:
         return []
-    return _plot_novel_steps_grid(model, novel_model, unvisited, "Recalled images on novel locations")
+    return _plot_novel_steps_grid(model, novel_model, unvisited, "Recalled images on novel locations",
+                                   show_row_labels=False)
 
 
 def demo_unvisited_predictions(model, novel_model, n_show=10, seed=2):

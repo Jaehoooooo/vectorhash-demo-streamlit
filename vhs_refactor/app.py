@@ -28,11 +28,13 @@ from experiments.experiment_item_capacity import (
 from experiments.experiment_spatial_navigation import (
     build_fig4c_demo, build_novel_trajectory,
     demo_revisit_predictions, demo_unvisited_by_distance, plot_unvisited_distance_map,
+    plot_grid_modules_square,
 )
 from experiments.experiment_memory_palace import (
     build_seq_scaffold, make_embedded_image_book_for_fig7,
     make_hairpin_path, path_to_indices, recall_sequence_once, cos_sim,
 )
+from grid_utils import GridCode
 
 st.set_page_config(page_title="Vector-HaSH demo", layout="wide")
 
@@ -43,6 +45,11 @@ st.markdown("""
 div[data-testid="stVerticalBlock"] { gap: 0.4rem; }
 div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
 button p { font-size: 0.75rem; }
+button[data-testid^="stBaseButton"] { padding-left: 0.25rem; padding-right: 0.25rem; min-width: 0; }
+.st-key-item_memory_fig div[data-testid="stImage"] { max-width: 65% !important; margin-left: auto !important; margin-right: auto !important; }
+.st-key-item_memory_fig div[data-testid="stImage"] img { width: 100% !important; height: auto !important; }
+.st-key-spatial_memory_figs div[data-testid="stImage"] { max-width: 90% !important; margin-left: auto !important; margin-right: auto !important; }
+.st-key-spatial_memory_figs div[data-testid="stImage"] img { width: 100% !important; height: auto !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -111,7 +118,8 @@ def render_item_memory():
 
     mem_sub, items_sub = _get_item_mem(Nh, n_items_sub)
     target_idx = min(idx_label - 1, n_items_sub - 1)
-    render_node_states_panel(mem_sub, items_sub, target_idx, noise_type, noise_ratio)
+    with st.container(key="item_memory_fig"):
+        render_node_states_panel(mem_sub, items_sub, target_idx, noise_type, noise_ratio)
 
 
 # =========================================================================
@@ -139,9 +147,14 @@ def render_spatial_memory():
     model = _get_3a_model(trained_length)
     novel_model = _get_3a_novel(model, trained_length, novel_length)
 
-    unvisited = plot_unvisited_distance_map(model, novel_model, n_show=4)
-    demo_revisit_predictions(model, novel_model, n_revisits=_SPATIAL_N_OVERLAP)
-    demo_unvisited_by_distance(model, novel_model, unvisited)
+    with st.container(key="spatial_memory_figs"):
+        map_col, revisit_col, novel_col = st.columns(3)
+        with map_col:
+            unvisited = plot_unvisited_distance_map(model, novel_model, n_show=2)
+        with revisit_col:
+            demo_revisit_predictions(model, novel_model, n_revisits=_SPATIAL_N_OVERLAP)
+        with novel_col:
+            demo_unvisited_by_distance(model, novel_model, unvisited)
 
 
 # =========================================================================
@@ -220,11 +233,12 @@ def _get_4b_pipeline(Nh, depth):
     S_seq = sbook_old[:, idxs_seq]
     M_seq = mbook_new[:, idxs_seq]
 
-    S_clean = recall_sequence_once(scaf, S_seq, P_seq, depth, np.random.default_rng(1))
+    S_clean, G_clean = recall_sequence_once(scaf, S_seq, P_seq, depth, np.random.default_rng(1), return_grid=True)
     S_addr = np.sign(S_clean[0])
     Wms = M_seq @ np.linalg.pinv(S_addr)          # 주소 -> new item
     Wsm_raw = S_seq @ np.linalg.pinv(M_seq)       # new item -> sensory (원본 스케일)
-    return scaf, S_seq, M_seq, P_seq, S_clean, Wms, Wsm_raw
+    G_true = scaf["gbook_flat"][:, idxs_seq]
+    return scaf, S_seq, M_seq, P_seq, S_clean, Wms, Wsm_raw, G_clean, G_true
 
 
 def render_memory_palace_b():
@@ -241,38 +255,45 @@ def render_memory_palace_b():
     t = stepper_slider("Item index", 1, depth, 1, 1, key="palace_b_idx", container=col3) - 1
     noise_ratio_vis = stepper_slider("Noise ratio", 0.0, 0.9, 0.3, 0.1, key="palace_b_noise_ratio", container=col4)
 
-    scaf, S_seq, M_seq, P_seq, S_clean, Wms, Wsm_raw = _get_4b_pipeline(Nh, depth)
+    scaf, S_seq, M_seq, P_seq, S_clean, Wms, Wsm_raw, G_clean, G_true = _get_4b_pipeline(Nh, depth)
 
     def recover(noisy_item, tt):
         sensory_est_noisy = Wsm_raw @ noisy_item
         S_query = S_seq.copy()
         S_query[:, tt] = sensory_est_noisy
-        S_rec = recall_sequence_once(scaf, S_seq, P_seq, depth, np.random.default_rng(1), S_query=S_query)
+        S_rec, G_rec = recall_sequence_once(scaf, S_seq, P_seq, depth, np.random.default_rng(1),
+                                             S_query=S_query, return_grid=True)
         sensory_cleaned = S_rec[0, :, tt]
         addr_clean = np.sign(sensory_cleaned)
         item_rec = Wms @ addr_clean
-        return sensory_est_noisy, sensory_cleaned, item_rec
+        return sensory_est_noisy, sensory_cleaned, item_rec, G_rec[0, :, tt]
 
     true_sensory = S_seq[:, t]
     sensory_baseline_rec = S_clean[0, :, t]
     true_item = M_seq[:, t]
     noisy_item = true_item if noise_ratio_vis == 0.0 else apply_noise(true_item, "salt_and_pepper", noise_ratio_vis, seed=2)
-    sensory_est_noisy, sensory_cleaned, item_rec = recover(noisy_item, t)
+    sensory_est_noisy, sensory_cleaned, item_rec, g_cleanup = recover(noisy_item, t)
 
     panels = [
-        (true_sensory, f"Stored item #{t + 1}", None),
-        (sensory_baseline_rec, f"Recalled item #{t + 1} (cos_sim={cos_sim(sensory_baseline_rec, true_sensory):.3f})", None),
+        (true_sensory, f"Stored item #{t + 1}", G_true[:, t]),
+        (sensory_baseline_rec, f"Recalled item #{t + 1} (cos_sim={cos_sim(sensory_baseline_rec, true_sensory):.3f})", G_clean[0, :, t]),
         (true_item, "Mnemonic item", None),
-        (noisy_item, "Noisy item", None),
-        (sensory_est_noisy, f"Noisy sensory recon (cos_sim={cos_sim(sensory_est_noisy, true_sensory):.3f})", None),
-        (sensory_cleaned, f"Cleanup sensory recall (cos_sim={cos_sim(sensory_cleaned, true_sensory):.3f})", None),
+        (noisy_item, "Noisy mnemonic item", None),
+        (sensory_est_noisy, f"Noisy item recon (cos_sim={cos_sim(sensory_est_noisy, true_sensory):.3f})", None),
+        (sensory_cleaned, f"Cleanup item recall #{t + 1} (cos_sim={cos_sim(sensory_cleaned, true_sensory):.3f})", g_cleanup),
         (item_rec, f"Recalled mnemonic item (cos_sim={cos_sim(item_rec, true_item):.3f})", None),
     ]
-    fig, axes = plt.subplots(1, len(panels), figsize=(3.1 * len(panels), 3.4))
-    for ax, (vec, title, _sim) in zip(axes, panels):
-        ax.imshow(vec.reshape(img_h, img_w), cmap="gray")
-        ax.set_title(title, fontsize=9)
-        ax.set_xticks([]); ax.set_yticks([])
+    grid_code = GridCode(module_periods=list(_PALACE_LAMBDAS))
+    fig, axes = plt.subplots(2, len(panels), figsize=(3.1 * len(panels), 6.8))
+    for col, (vec, title, g) in enumerate(panels):
+        axes[0, col].imshow(vec.reshape(img_h, img_w), cmap="gray")
+        axes[0, col].set_title(title, fontsize=9)
+        axes[0, col].set_xticks([]); axes[0, col].set_yticks([])
+        if g is None:
+            axes[1, col].axis("off")
+        else:
+            plot_grid_modules_square(axes[1, col], grid_code, g)
+            axes[1, col].set_title("Grid state", fontsize=9)
     plt.tight_layout()
     plt.show()
 

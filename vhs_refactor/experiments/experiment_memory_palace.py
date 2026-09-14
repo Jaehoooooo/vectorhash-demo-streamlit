@@ -122,7 +122,7 @@ def binary_mi_from_l1(err_l1):
 
 
 def recall_sequence_once(scaf, S_seq, P_seq, Nseq, rng=None, noise_frac=0.0, skip_cleanup=False,
-                          S_query=None):
+                          S_query=None, return_grid=False):
     """
     노트북의 두 버전(무노이즈 버전 / noise_frac 버전)을 하나로 통합.
     - rng=None 또는 noise_frac=0 : 완전 결정론적(무노이즈) 회상
@@ -161,7 +161,7 @@ def recall_sequence_once(scaf, S_seq, P_seq, Nseq, rng=None, noise_frac=0.0, ski
 
     P_rec = nonlin(scaf["Wpg"] @ G_rec, scaf["thresh"])
     S_rec = Wsp @ P_rec
-    return S_rec
+    return (S_rec, G_rec) if return_grid else S_rec
 
 
 def cos_sim(a, b):
