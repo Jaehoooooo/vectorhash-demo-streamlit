@@ -973,7 +973,14 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
         # 최종 검증: 겹치는 지점 수가 정확히 n_overlap이고, 같은 칸을 너무 자주
         # 밟지 않았는지 확인한다. 둘 중 하나라도 어긋나면(예: 패딩 무작위 보행이
         # 우연히 다른 anchor를 또 밟았거나, 한 칸을 3번 넘게 밟았거나) 통째로 재시도한다.
-        if not over_limit and len(set(trained_path) & set(novel_path)) == n_overlap:
+        #if not over_limit and len(set(trained_path) & set(novel_path)) == n_overlap:
+        #    break
+
+        # 1. numba 결과에서 status가 0(정상 완주)인지 확인
+        is_completed = (status == 0)
+        
+        # 2. 검증 조건에 추가
+        if not over_limit and is_completed and len(set(trained_path) & set(novel_path)) == n_overlap:
             break
     else:
         raise RuntimeError("겹치지 않는 경로를 못 찾았습니다. n_overlap을 줄이거나 "
