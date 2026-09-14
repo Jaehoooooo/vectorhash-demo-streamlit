@@ -42,16 +42,21 @@ st.markdown("""
 <style>
 div[data-testid="stVerticalBlock"] { gap: 0.4rem; }
 div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
+button p { font-size: 0.75rem; }
 </style>
 """, unsafe_allow_html=True)
 
 
 def _render_open_figures():
     """plt.show()를 st.pyplot()으로 리다이렉트: 기존 실험 코드(plot 함수들)를
-    수정 없이 그대로 재사용하기 위한 monkeypatch."""
+    수정 없이 그대로 재사용하기 위한 monkeypatch.
+    use_container_width=False -- 기본값(True)은 컨테이너 폭에 무조건 맞춰
+    늘려버려서 figsize를 줄여도 화면 출력 크기가 그대로였음. False로 두면
+    figsize*dpi가 실제 출력 픽셀 크기가 되고(컨테이너보다 크면 그 폭까지만
+    줄어듦), figsize가 다시 출력 크기를 제어하는 값이 된다."""
     for num in plt.get_fignums():
         fig = plt.figure(num)
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=False)
         plt.close(fig)
 
 
