@@ -845,6 +845,12 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_
         if not ok:
             continue
 
+        # anchor 연결은 끝났으니 이제부터는 anchor도 다시 밟으면 안 된다(그러면
+        # overlap 수가 n_overlap을 넘어가서 아래 최종 검증에서 매번 재시도로
+        # 낭비된다) -- forbidden에 anchor까지 추가해서 패딩 보행이 절대
+        # trained path를 다시 안 건드리게 한다.
+        forbidden |= set(anchors)
+
         # 남은 길이는 forbidden을 피해서, build_fig4c_demo와 같은 방식(self-avoiding
         # + drift bias)의 무작위 보행으로 패딩.
         novel_visited = set(novel_path)
