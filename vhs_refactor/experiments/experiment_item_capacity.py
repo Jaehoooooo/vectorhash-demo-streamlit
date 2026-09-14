@@ -395,19 +395,19 @@ def render_node_states_panel(mem, items, target_idx, noise_type, noise_ratio, ex
 
     from experiments.experiment_spatial_navigation import plot_grid_modules_square
 
-    fig, axes = plt.subplots(2, 3, figsize=(17, 9))
+    fig, axes = plt.subplots(2, 3, figsize=(12, 7))
 
     axes[0, 0].imshow(s_orig_2d, cmap="gray")
-    axes[0, 0].set_title(f"Stored item #{target_idx + 1}")
+    axes[0, 0].set_title(f"Stored item #{target_idx + 1}", fontsize=10)
     axes[0, 0].axis('off')
 
     axes[0, 1].imshow(s_noisy_2d, cmap="gray")
-    axes[0, 1].set_title("Noisy item")
+    axes[0, 1].set_title("Noisy item", fontsize=10)
     axes[0, 1].axis('off')
 
     axes[0, 2].imshow(s_rec_2d, cmap="gray")
     title3_suffix = "None" if closest_idx is None else f"#{closest_idx + 1}"
-    axes[0, 2].set_title(f"Recalled item {title3_suffix} (cos_sim={cos_sim:.3f})")
+    axes[0, 2].set_title(f"Recalled item {title3_suffix} (cos_sim={cos_sim:.3f})", fontsize=10)
     axes[0, 2].axis('off')
 
     plot_grid_modules_square(axes[1, 0], grid_code, g_true)
