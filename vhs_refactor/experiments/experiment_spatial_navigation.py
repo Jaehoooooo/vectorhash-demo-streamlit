@@ -713,7 +713,7 @@ def visualize_realtime_trajectory_with_indices(room_size=10, n_steps=200):
 # [추가] fig4c 스타일 데모: 실제 이미지 sensory + 실제 경로 시각화 +
 # 재방문 복원 / 미방문 trajectory 예측 / sensory -> location 역추론
 # ---------------------------------------------------------
-def build_fig4c_demo(trained_length=100, room_pad=3, seed=3):
+def build_fig4c_demo(trained_length=100, room_pad=3, seed=None):
     """실제 이미지(prepare_sensory_data)를 실제 random-walk 경로("원래 경로",
     trained path) 위 각 위치에 결합해서 학습한다. VectorHASH_fig4e_random.ipynb의
     fig4c처럼 경로를 Npos x Npos 방 안(벽에서 room_pad칸 이상 떨어진 곳)에
@@ -800,7 +800,7 @@ def _bfs_shortest_path(start, target, forbidden, lo, hi, rng):
     return path
 
 
-def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=1, max_attempts=200):
+def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=None, max_attempts=200):
     """원래 경로(model)와 정확히 n_overlap개 지점에서만 겹치는("재방문") 새
     경로를 만든다. 원래 경로 위 지정한 n_overlap개(anchor) 위치만 지나가게
     허용하고, 나머지 원래 경로 칸은 전부 회피(forbidden)한다 -- fig4e_random
@@ -821,7 +821,7 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=1, max_att
     n_overlap = min(n_overlap, len(unique_cells))
 
     for attempt in range(max_attempts):
-        rng = np.random.default_rng(seed + attempt)
+        rng = np.random.default_rng(None if seed is None else seed + attempt)
         # anchor 조합 자체가 (조밀한 자기교차 때문에) BFS로 못 뚫는 경우가 있으므로,
         # 매 시도마다 앵커도 다시 뽑는다 (시작점=index 0은 항상 고정).
         if attempt == 0:
@@ -845,15 +845,24 @@ def build_novel_trajectory(model, novel_length=600, n_overlap=5, seed=1, max_att
         if not ok:
             continue
 
-        # 남은 길이는 forbidden을 피해서 무작위 보행으로 패딩
+        # 남은 길이는 forbidden을 피해서, build_fig4c_demo와 같은 방식(self-avoiding
+        # + drift bias)의 무작위 보행으로 패딩.
+        novel_visited = set(novel_path)
         while len(novel_path) < novel_length:
             cx, cy = novel_path[-1]
-            valid = [(cx + dx, cy + dy) for dx, dy in moves4
+            valid = [(dx, dy) for dx, dy in moves4
                      if lo <= cx + dx < hi and lo <= cy + dy < hi
                      and (cx + dx, cy + dy) not in forbidden]
             if not valid:
                 break
-            novel_path.append(valid[rng.integers(len(valid))])
+            unvisited = [(dx, dy) for dx, dy in valid if (cx + dx, cy + dy) not in novel_visited]
+            candidates = unvisited if unvisited else valid
+            w = np.array([1.0 + max(0, dx) * 0.3 + max(0, dy) * 0.3 for dx, dy in candidates])
+            w = w / w.sum()
+            dx, dy = candidates[rng.choice(len(candidates), p=w)]
+            nxt = (cx + dx, cy + dy)
+            novel_path.append(nxt)
+            novel_visited.add(nxt)
 
         # 최종 검증: 실제로 겹치는 지점 수가 정확히 n_overlap인지 확인하고,
         # 아니면(예: 패딩 무작위 보행이 우연히 다른 anchor를 또 밟은 경우) 재시도한다.

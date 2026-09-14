@@ -100,25 +100,27 @@ def render_item_memory():
 # =========================================================================
 @st.cache_resource(max_entries=1, show_spinner="Building trained path model...")
 def _get_3a_model(trained_length):
-    return build_fig4c_demo(trained_length=trained_length, seed=3)
+    return build_fig4c_demo(trained_length=trained_length)
+
+
+_SPATIAL_N_OVERLAP = 3  # 시작점 포함 재방문 지점 수 고정
 
 
 @st.cache_resource(max_entries=1, show_spinner="Building novel trajectory...")
-def _get_3a_novel(_model, trained_length, novel_length, n_overlap):
-    return build_novel_trajectory(_model, novel_length=novel_length, n_overlap=n_overlap, seed=1)
+def _get_3a_novel(_model, trained_length, novel_length):
+    return build_novel_trajectory(_model, novel_length=novel_length, n_overlap=_SPATIAL_N_OVERLAP)
 
 
 def render_spatial_memory():
     st.header("2. Spatial Memory")
     trained_length = stepper_slider("Original path length:", 20, 300, 100, 10, key="spatial_trained_length")
     novel_length = stepper_slider("New path length:", 20, 300, 100, 10, key="spatial_novel_length")
-    n_overlap = stepper_slider("# revisits:", 1, 10, 4, 1, key="spatial_n_overlap")
 
     model = _get_3a_model(trained_length)
-    novel_model = _get_3a_novel(model, trained_length, novel_length, n_overlap)
+    novel_model = _get_3a_novel(model, trained_length, novel_length)
 
     unvisited = plot_unvisited_distance_map(model, novel_model, n_show=4)
-    demo_revisit_predictions(model, novel_model, n_revisits=n_overlap)
+    demo_revisit_predictions(model, novel_model, n_revisits=_SPATIAL_N_OVERLAP)
     demo_unvisited_by_distance(model, novel_model, unvisited)
 
 
