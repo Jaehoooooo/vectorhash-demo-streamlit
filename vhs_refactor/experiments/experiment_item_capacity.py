@@ -395,30 +395,30 @@ def render_node_states_panel(mem, items, target_idx, noise_type, noise_ratio, ex
 
     from experiments.experiment_spatial_navigation import plot_grid_modules_square
 
-    fig, axes = plt.subplots(2, 3, figsize=(9, 5.25))
+    fig, axes = plt.subplots(2, 3, figsize=(17, 8))
 
     axes[0, 0].imshow(s_orig_2d, cmap="gray")
-    axes[0, 0].set_title(f"Stored item #{target_idx + 1}", fontsize=10)
+    axes[0, 0].set_title(f"Stored item #{target_idx + 1}", fontsize=12)
     axes[0, 0].axis('off')
 
     axes[0, 1].imshow(s_noisy_2d, cmap="gray")
-    axes[0, 1].set_title("Noisy item", fontsize=10)
+    axes[0, 1].set_title("Noisy item", fontsize=12)
     axes[0, 1].axis('off')
 
     axes[0, 2].imshow(s_rec_2d, cmap="gray")
     title3_suffix = "None" if closest_idx is None else f"#{closest_idx + 1}"
-    axes[0, 2].set_title(f"Recalled item {title3_suffix} (cos_sim={cos_sim:.3f})", fontsize=10)
+    axes[0, 2].set_title(f"Recalled item {title3_suffix} (cos_sim={cos_sim:.3f})", fontsize=12)
     axes[0, 2].axis('off')
 
     plot_grid_modules_square(axes[1, 0], grid_code, g_true)
-    axes[1, 0].set_title("Grid state (true)", fontsize=10)
+    axes[1, 0].set_title("Grid state (true)", fontsize=12)
 
     plot_grid_modules_square(axes[1, 1], grid_code, logits_pre_wta, vmin=None, vmax=None)
-    axes[1, 1].set_title("Grid state (pre-WTA)", fontsize=10)
+    axes[1, 1].set_title("Grid state (pre-WTA)", fontsize=12)
 
     if g_clean is not None:
         plot_grid_modules_square(axes[1, 2], grid_code, g_clean)
-        axes[1, 2].set_title("Grid state (post-WTA)", fontsize=10)
+        axes[1, 2].set_title("Grid state (post-WTA)", fontsize=12)
     else:
         axes[1, 2].axis('off')
 
